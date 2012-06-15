@@ -41,6 +41,9 @@
 #include "graphics/scaler/aspect.h"
 #include "graphics/surface.h"
 
+#include "common/file.h"
+#include "graphics/decoders/png.h"
+
 struct GraphicsModeData {
 	const char *pluginName;
 	uint scaleFactor;
@@ -2109,6 +2112,51 @@ bool SurfaceSdlGraphicsManager::handleScalerHotkeys(Common::KeyCode key) {
 #endif
 		internUpdateScreen();
 		return true;
+	}
+
+	if (key == 'w') {
+		Common::File f;
+		if (f.exists("../picture.png")) {
+			f.open("../picture.png");
+			Graphics::PNGDecoder bd;
+			bd.loadStream(f);
+			const Graphics::Surface *in = bd.getSurface();
+			int factor = (*_scalerPlugin)->getFactor();
+			SDL_Surface *out = SDL_CreateRGBSurface(SDL_SWSURFACE, in->w * factor, in->h * factor,
+					32,
+					0xFF000000,
+					0x00FF0000,
+					0x0000FF00,
+					0x000000FF);
+			SDL_LockSurface(out);
+			uint8 *src = (uint8*)in->pixels;
+			(*_scalerPlugin)->deinitialize();
+			(*_scalerPlugin)->initialize(in->format);
+			(*_scalerPlugin)->scale(src, in->pitch, (uint8*)out->pixels, out->pitch, in->w, in->h, 0, 0);
+			(*_scalerPlugin)->deinitialize();
+			Graphics::PixelFormat format;
+			convertSDLPixelFormat(_hwscreen->format, &format);
+			(*_scalerPlugin)->initialize(format);
+
+			char filename[50];
+
+			for (int n = 0;; n++) {
+				SDL_RWops *file;
+
+				sprintf(filename, "../%s%dx-%05d.bmp", (*_scalerPlugin)->getPrettyName(), (*_scalerPlugin)->getFactor(), n);
+				file = SDL_RWFromFile(filename, "r");
+				if (!file)
+					break;
+				SDL_RWclose(file);
+			}
+			if (SDL_SaveBMP(out, filename) == 0)
+				debug("Saved test picture '%s'", filename);
+			else
+				warning("Could not save picture");
+			f.close();
+			bd.destroy();
+			SDL_FreeSurface(out);
+		}
 	}
 
 	bool needSwitch = false;
