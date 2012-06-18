@@ -2115,11 +2115,10 @@ bool SurfaceSdlGraphicsManager::handleScalerHotkeys(Common::KeyCode key) {
 	}
 
 	if (key == 'w') {
-		Common::File f;
-		if (f.exists("../picture.png")) {
-			f.open("../picture.png");
+		Common::FSNode f("../picture.png");
+		if (f.exists()) {
 			Graphics::PNGDecoder bd;
-			bd.loadStream(f);
+			bd.loadStream(*f.createReadStream());
 			const Graphics::Surface *in = bd.getSurface();
 			int factor = (*_scalerPlugin)->getFactor();
 			SDL_Surface *out = SDL_CreateRGBSurface(SDL_SWSURFACE, in->w * factor, in->h * factor,
@@ -2129,10 +2128,18 @@ bool SurfaceSdlGraphicsManager::handleScalerHotkeys(Common::KeyCode key) {
 					0x0000FF00,
 					0x000000FF);
 			SDL_LockSurface(out);
-			uint8 *src = (uint8*)in->pixels;
+			Graphics::Surface src;
+			src.create(in->w + _maxExtraPixels*2, in->h + _maxExtraPixels*2, in->format);
+			uint8 *inp = (uint8 *)in->pixels;
+			uint8 *srcp = (uint8 *)src.pixels + _maxExtraPixels * in->format.bytesPerPixel;
+			for (int y = 0; y < in->h; ++y) {
+				memcpy(srcp, inp, in->w * in->format.bytesPerPixel);
+				srcp += src.pitch;
+				inp += in->pitch;
+			}
 			(*_scalerPlugin)->deinitialize();
 			(*_scalerPlugin)->initialize(in->format);
-			(*_scalerPlugin)->scale(src, in->pitch, (uint8*)out->pixels, out->pitch, in->w, in->h, 0, 0);
+			(*_scalerPlugin)->scale((uint8 *)src.pixels + (_maxExtraPixels * in->format.bytesPerPixel) * (1 + src.pitch), src.pitch, (uint8*)out->pixels, out->pitch, in->w, in->h, 0, 0);
 			(*_scalerPlugin)->deinitialize();
 			Graphics::PixelFormat format;
 			convertSDLPixelFormat(_hwscreen->format, &format);
@@ -2153,10 +2160,11 @@ bool SurfaceSdlGraphicsManager::handleScalerHotkeys(Common::KeyCode key) {
 				debug("Saved test picture '%s'", filename);
 			else
 				warning("Could not save picture");
-			f.close();
 			bd.destroy();
+			src.free();
 			SDL_FreeSurface(out);
-		}
+		} else
+			debug("Did not exist");
 	}
 
 	bool needSwitch = false;
