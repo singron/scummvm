@@ -2139,7 +2139,7 @@ bool SurfaceSdlGraphicsManager::handleScalerHotkeys(Common::KeyCode key) {
 			}
 			(*_scalerPlugin)->deinitialize();
 			(*_scalerPlugin)->initialize(in->format);
-			(*_scalerPlugin)->scale((uint8 *)src.pixels + (_maxExtraPixels * in->format.bytesPerPixel) * (1 + src.pitch), src.pitch, (uint8*)out->pixels, out->pitch, in->w, in->h, 0, 0);
+			(*_scalerPlugin)->scale((uint8 *)src.pixels + (_maxExtraPixels * in->format.bytesPerPixel) + (_maxExtraPixels * src.pitch), src.pitch, (uint8*)out->pixels, out->pitch, in->w, in->h, 0, 0);
 			(*_scalerPlugin)->deinitialize();
 			Graphics::PixelFormat format;
 			convertSDLPixelFormat(_hwscreen->format, &format);
