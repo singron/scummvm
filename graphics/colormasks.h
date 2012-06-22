@@ -264,10 +264,19 @@ struct ColorMasks<8888> {
 		kGreenBits  = 8,
 		kBlueBits   = 8,
 
+#if 1
+		// ARGB (Normal use)
 		kAlphaShift = kRedBits+kGreenBits+kBlueBits,
 		kRedShift   = kGreenBits+kBlueBits,
 		kGreenShift = kBlueBits,
 		kBlueShift  = 0,
+#else
+		// RGBA (Used by PNG decoder)
+		kAlphaShift = 0,
+		kRedShift   = kAlphaBits+kGreenBits+kBlueBits,
+		kGreenShift = kAlphaBits+kBlueBits,
+		kBlueShift  = kAlphaBits,
+#endif
 
 		kAlphaMask = ((1 << kAlphaBits) - 1) << kAlphaShift,
 		kRedMask   = ((1 << kRedBits) - 1) << kRedShift,
