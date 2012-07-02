@@ -2114,6 +2114,20 @@ bool SurfaceSdlGraphicsManager::handleScalerHotkeys(Common::KeyCode key) {
 		return true;
 	}
 
+	if (key == 'b') {
+		int end;
+		int srcPitch = _tmpscreen->pitch;
+		int dstPitch = _hwscreen->pitch;
+		int start = g_system->getMillis();
+		for (int i = 0; i < 100; ++i) {
+			(*_scalerPlugin)->scale((byte *)_tmpscreen->pixels + (_maxExtraPixels) * 2 + (_maxExtraPixels) * srcPitch, srcPitch,
+					(byte *)_hwscreen->pixels, dstPitch, _tmpscreen->w, _tmpscreen->h, 0, 0);
+		}
+		end = g_system->getMillis();
+		debug("%s did 100 frames in %d milliseconds", (*_scalerPlugin)->getName(), end - start);
+		return true;
+	}
+
 	if (key == 'w') {
 		Common::FSNode f("../picture.png");
 		if (f.exists()) {
