@@ -1014,6 +1014,9 @@ void SurfaceSdlGraphicsManager::internUpdateScreen() {
 
 		SDL_LockSurface(srcSurf);
 		SDL_LockSurface(_hwscreen);
+		if (_useOldSrc && !_overlayVisible) {
+			SDL_LockSurface(_oldscreen);
+		}
 
 		srcPitch = srcSurf->pitch;
 		dstPitch = _hwscreen->pitch;
@@ -1067,6 +1070,16 @@ void SurfaceSdlGraphicsManager::internUpdateScreen() {
 		}
 		SDL_UnlockSurface(srcSurf);
 		SDL_UnlockSurface(_hwscreen);
+
+		if (_useOldSrc && !_overlayVisible) {
+			SDL_UnlockSurface(_oldscreen);
+
+			// Swap old and new screen
+			SDL_Surface *tmp;
+			tmp = _oldscreen;
+			_oldscreen = _tmpscreen;
+			_tmpscreen = tmp;
+		}
 
 		// Readjust the dirty rect list in case we are doing a full update.
 		// This is necessary if shaking is active.
