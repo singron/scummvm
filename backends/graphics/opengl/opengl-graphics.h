@@ -204,11 +204,13 @@ protected:
 	 */
 	inline bool getAntialiasingState() const { return _videoMode.antialiasing; }
 
+private:
 	// Drawing coordinates for the current display mode and scale
 	int _displayX;
 	int _displayY;
 	int _displayWidth;
 	int _displayHeight;
+protected:
 
 	virtual const char *getCurrentModeName();
 
@@ -218,11 +220,13 @@ protected:
 	uint getAspectRatio() const;
 
 	void setFormatIsBGR(bool isBGR) { _formatBGR = isBGR; }
+private:
 	bool _formatBGR;
 
 	//
 	// Game screen
 	//
+private:
 	GLTexture *_gameTexture;
 	Graphics::Surface _screenData;
 	int _screenChangeCount;
@@ -242,6 +246,8 @@ protected:
 	//
 	// Overlay
 	//
+
+private:
 	GLTexture *_overlayTexture;
 	Graphics::Surface _overlayData;
 	Graphics::PixelFormat _overlayFormat;
@@ -249,6 +255,7 @@ protected:
 	bool _overlayNeedsRedraw;
 	Common::Rect _overlayDirtyRect;
 
+protected:
 	virtual void refreshOverlay();
 
 #ifdef USE_OSD
@@ -266,6 +273,7 @@ protected:
 	//
 	// Mouse
 	//
+private:
 	struct MousePos {
 		// The mouse position in hardware screen coordinates.
 		int16 x, y;
@@ -297,6 +305,7 @@ protected:
 	uint32 _cursorKeyColor;
 	bool _cursorDontScale;
 	bool _cursorNeedsRedraw;
+protected:
 
 	/**
 	 * Set up the mouse position for graphics output.
@@ -342,6 +351,7 @@ protected:
 	 */
 	void updateOSD();
 
+private:
 	/**
 	 * The OSD contents.
 	 */
