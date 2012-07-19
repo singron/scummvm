@@ -1237,6 +1237,10 @@ void OpenGLGraphicsManager::loadTextures() {
 }
 
 bool OpenGLGraphicsManager::loadGFXMode() {
+	// Use all available space for overlay
+	_videoMode.overlayWidth = _videoMode.hardwareWidth;
+	_videoMode.overlayHeight = _videoMode.hardwareHeight;
+
 	// Initialize OpenGL settings
 	initGL();
 

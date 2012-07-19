@@ -179,8 +179,8 @@ bool BadaGraphicsManager::loadGFXMode() {
 
 	int x, y, width, height;
 	_appForm->GetBounds(x, y, width, height);
-	_videoMode.overlayWidth = _videoMode.hardwareWidth = width;
-	_videoMode.overlayHeight = _videoMode.hardwareHeight = height;
+	_videoMode.hardwareWidth = width;
+	_videoMode.hardwareHeight = height;
 	_videoMode.scaleFactor = 3; // for proportional sized cursor in the launcher
 
 	AppLog("screen size: %dx%d", _videoMode.hardwareWidth, _videoMode.hardwareHeight);
