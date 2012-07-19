@@ -404,36 +404,6 @@ void OpenGLSdlGraphicsManager::internUpdateScreen() {
 	SDL_GL_SwapBuffers();
 }
 
-#ifdef USE_OSD
-void OpenGLSdlGraphicsManager::displayModeChangedMsg() {
-	const char *newModeName = getCurrentModeName();
-	if (newModeName) {
-		const int scaleFactor = getScale();
-
-		Common::String osdMessage = Common::String::format(
-			"%s: %s\n%d x %d -> %d x %d",
-			_("Current display mode"),
-			newModeName,
-			_videoMode.screenWidth * scaleFactor,
-			_videoMode.screenHeight * scaleFactor,
-			_hwscreen->w, _hwscreen->h
-			);
-		displayMessageOnOSD(osdMessage.c_str());
-	}
-}
-void OpenGLSdlGraphicsManager::displayScaleChangedMsg() {
-	const int scaleFactor = getScale();
-	Common::String osdMessage = Common::String::format(
-		"%s: x%d\n%d x %d -> %d x %d",
-		_("Current scale"),
-		scaleFactor,
-		_videoMode.screenWidth, _videoMode.screenHeight,
-		_videoMode.overlayWidth, _videoMode.overlayHeight
-		);
-	displayMessageOnOSD(osdMessage.c_str());
-}
-#endif
-
 bool OpenGLSdlGraphicsManager::isHotkey(const Common::Event &event) {
 	if ((event.kbd.flags & (Common::KBD_CTRL|Common::KBD_ALT)) == (Common::KBD_CTRL|Common::KBD_ALT)) {
 		if (event.kbd.keycode == Common::KEYCODE_PLUS || event.kbd.keycode == Common::KEYCODE_MINUS ||

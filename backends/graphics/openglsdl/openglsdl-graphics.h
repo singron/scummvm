@@ -107,18 +107,6 @@ protected:
 	// from its borders, but in some cases a resize event can be generated
 	// after a fullscreen change.
 	int _ignoreResizeFrames;
-
-#ifdef USE_OSD
-	/**
-	 * Displays a mode change message in OSD
-	 */
-	void displayModeChangedMsg();
-
-	/**
-	 * Displays a scale change message in OSD
-	 */
-	void displayScaleChangedMsg();
-#endif
 };
 
 #endif

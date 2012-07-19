@@ -658,6 +658,37 @@ void OpenGLGraphicsManager::displayMessageOnOSD(const char *msg) {
 #endif
 }
 
+#ifdef USE_OSD
+void OpenGLGraphicsManager::displayModeChangedMsg() {
+	const char *newModeName = getCurrentModeName();
+	if (newModeName) {
+		const int scaleFactor = getScale();
+
+		Common::String osdMessage = Common::String::format(
+			"%s: %s\n%d x %d -> %d x %d",
+			_("Current display mode"),
+			newModeName,
+			_videoMode.screenWidth * scaleFactor,
+			_videoMode.screenHeight * scaleFactor,
+			_videoMode.hardwareWidth, _videoMode.hardwareHeight
+			);
+		displayMessageOnOSD(osdMessage.c_str());
+	}
+}
+void OpenGLGraphicsManager::displayScaleChangedMsg() {
+	const int scaleFactor = getScale();
+	Common::String osdMessage = Common::String::format(
+		"%s: x%d\n%d x %d -> %d x %d",
+		_("Current scale"),
+		scaleFactor,
+		_videoMode.screenWidth, _videoMode.screenHeight,
+		_videoMode.overlayWidth, _videoMode.overlayHeight
+		);
+	displayMessageOnOSD(osdMessage.c_str());
+}
+#endif
+
+
 //
 // Intern
 //

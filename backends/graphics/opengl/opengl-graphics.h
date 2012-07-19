@@ -251,6 +251,18 @@ protected:
 
 	virtual void refreshOverlay();
 
+#ifdef USE_OSD
+	/**
+	 * Displays a mode change message in OSD
+	 */
+	void displayModeChangedMsg();
+
+	/**
+	 * Displays a scale change message in OSD
+	 */
+	void displayScaleChangedMsg();
+#endif
+
 	//
 	// Mouse
 	//
