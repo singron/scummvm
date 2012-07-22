@@ -119,6 +119,12 @@ protected:
 	 */
 	virtual void loadTextures();
 
+	/**
+	 * Draws the texture to the screen buffer.
+	 */
+	void drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h);
+
+
 	//
 	// GFX and video
 	//
@@ -336,8 +342,28 @@ protected:
 	virtual void adjustMousePosition(int16 &x, int16 &y);
 
 	//
+	// Shaders
+	//
+private:
+	bool _enableShaders; ///< Set based on OpenGL version
+	bool _shadersInited;
+	GLuint _vertexShader, _fragmentShader;
+	GLuint _program;
+	GLuint _textureLoc;
+
+	/**
+	 * Check OpenGL version and compile shaders if supported.
+	 */
+	void initShaders();
+
+	GLuint compileShader(const char * src, int size, GLenum type);
+
+	GLuint linkShaders(GLuint vertex, GLuint fragment);
+
+	//
 	// Misc
 	//
+protected:
 	virtual bool saveScreenshot(const char *filename);
 
 #ifdef USE_OSD

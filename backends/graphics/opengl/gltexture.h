@@ -25,6 +25,8 @@
 
 #include "common/scummsys.h"
 
+#define GL_GLEXT_PROTOTYPES
+
 #ifdef WIN32
 #if defined(ARRAYSIZE) && !defined(_WINDOWS_)
 #undef ARRAYSIZE
@@ -66,7 +68,7 @@ public:
 	 * Initialize OpenGL Extensions
 	 */
 	static void initGLExtensions();
-
+	
 	GLTexture(byte bpp, GLenum internalFormat, GLenum format, GLenum type);
 	~GLTexture();
 
@@ -88,11 +90,6 @@ public:
 		GLuint w, GLuint h);
 
 	/**
-	 * Draws the texture to the screen buffer.
-	 */
-	void drawTexture(GLshort x, GLshort y, GLshort w, GLshort h);
-
-	/**
 	 * Get the texture width.
 	 */
 	GLuint getWidth() const { return _realWidth; }
@@ -103,9 +100,24 @@ public:
 	GLuint getHeight() const { return _realHeight; }
 
 	/**
+	 * Get the texture width in texture coordinates.
+	 */
+	GLfloat getDrawWidth() const { return (GLfloat)_realWidth / _textureWidth; }
+
+	/**
+	 * Get the texture height in texture coordinates.
+	 */
+	GLfloat getDrawHeight() const { return (GLfloat)_realHeight / _textureHeight; }
+
+	/**
 	 * Get the bytes per pixel.
 	 */
 	uint getBytesPerPixel() const { return _bytesPerPixel; }
+
+	/**
+	 * Get id to pass to GL functions.
+	 */
+	GLuint getName() const { return _textureName; }
 
 	/**
 	 * Set the texture filter.

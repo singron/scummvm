@@ -51,6 +51,7 @@ OpenGLGraphicsManager::OpenGLGraphicsManager()
 	_cursorVisible(false), _cursorKeyColor(0),
 	_cursorDontScale(false),
 	_formatBGR(false),
+	_enableShaders(false), _shadersInited(false),
 	_displayX(0), _displayY(0), _displayWidth(0), _displayHeight(0) {
 
 	memset(&_oldVideoMode, 0, sizeof(_oldVideoMode));
@@ -1022,6 +1023,10 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 	// Clear the screen buffer
 	glClear(GL_COLOR_BUFFER_BIT); CHECK_GL_ERROR();
 
+	// FIXME: Use different program for gamescreen and overlay
+	if (_enableShaders)
+		glUseProgram(_program);
+
 	if (_screenNeedsRedraw || !_screenDirtyRect.isEmpty())
 		// Refresh texture if dirty
 		refreshGameScreen();
@@ -1034,7 +1039,7 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 	glTranslatef(0, _shakePos * scaleFactor, 0); CHECK_GL_ERROR();
 
 	// Draw the game screen
-	_gameTexture->drawTexture(_displayX, _displayY, _displayWidth, _displayHeight);
+	drawTexture(_gameTexture, _displayX, _displayY, _displayWidth, _displayHeight);
 
 	glPopMatrix();
 
@@ -1044,7 +1049,7 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 			refreshOverlay();
 
 		// Draw the overlay
-		_overlayTexture->drawTexture(0, 0, _videoMode.overlayWidth, _videoMode.overlayHeight);
+		drawTexture(_overlayTexture, 0, 0, _videoMode.overlayWidth, _videoMode.overlayHeight);
 	}
 
 	if (_cursorVisible) {
@@ -1057,12 +1062,15 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 		// Adjust mouse shake position, unless the overlay is visible
 		glTranslatef(0, _overlayVisible ? 0 : _shakePos * scaleFactor, 0); CHECK_GL_ERROR();
 
+			drawTexture(_cursorTexture, _cursorState.x - _cursorState.vHotX,
+			                            _cursorState.y - _cursorState.vHotY, _cursorState.vW, _cursorState.vH);
+
 		// Draw the cursor
 		if (_overlayVisible)
-			_cursorTexture->drawTexture(_cursorState.x - _cursorState.rHotX,
+			drawTexture(_cursorTexture, _cursorState.x - _cursorState.rHotX,
 			                            _cursorState.y - _cursorState.rHotY, _cursorState.rW, _cursorState.rH);
 		else
-			_cursorTexture->drawTexture(_cursorState.x - _cursorState.vHotX,
+			drawTexture(_cursorTexture, _cursorState.x - _cursorState.vHotX,
 			                            _cursorState.y - _cursorState.vHotY, _cursorState.vW, _cursorState.vH);
 
 		glPopMatrix();
@@ -1090,7 +1098,7 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 		glColor4f(1.0f, 1.0f, 1.0f, _osdAlpha / 100.0f); CHECK_GL_ERROR();
 
 		// Draw the osd texture
-		_osdTexture->drawTexture(0, 0, _videoMode.hardwareWidth, _videoMode.hardwareHeight);
+		drawTexture(_osdTexture, 0, 0, _videoMode.hardwareWidth, _videoMode.hardwareHeight);
 
 		// Reset color
 		glColor4f(1.0f, 1.0f, 1.0f, 1.0f); CHECK_GL_ERROR();
@@ -1236,6 +1244,60 @@ void OpenGLGraphicsManager::loadTextures() {
 #endif
 }
 
+void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h) {
+	// Select this OpenGL texture
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, texture->getName()); CHECK_GL_ERROR();
+	if (_enableShaders)
+		glUniform1i(_textureLoc, 0);
+
+
+	// Calculate the texture rect that will be drawn
+	const GLfloat texWidth = texture->getDrawWidth();
+	const GLfloat texHeight = texture->getDrawHeight();
+	const GLfloat texcoords[] = {
+		0, 0,
+		texWidth, 0,
+		0, texHeight,
+		texWidth, texHeight,
+	};
+	glTexCoordPointer(2, GL_FLOAT, 0, texcoords); CHECK_GL_ERROR();
+
+	if (_enableShaders) {
+		// Transform [0 .. displayWidth] to [-1 .. 1]
+		float fx = (float)x / _videoMode.hardwareWidth;
+		float fw = (float)w / _videoMode.hardwareWidth;
+		float fy = (float)y / _videoMode.hardwareHeight;
+		float fh = (float)h / _videoMode.hardwareHeight;
+		fx *= 2;
+		fy *= -2;
+		fw *= 2;
+		fh *= -2;
+		fx -= 1;
+		fy += 1;
+		// Use OpenGL coordinates for vertices
+		const GLfloat vertices[] = {
+			fx,      fy,
+			fx + fw,  fy,
+			fx,      fy + fh,
+			fx + fw,  fy + fh,
+		};
+		glVertexPointer(2, GL_FLOAT, 0, vertices); CHECK_GL_ERROR();
+	} else {
+		// Calculate the screen rect where the texture will be drawn
+		const GLshort vertices[] = {
+			x,      y,
+			x + w,  y,
+			x,      y + h,
+			x + w,  y + h,
+		};
+		glVertexPointer(2, GL_SHORT, 0, vertices); CHECK_GL_ERROR();
+	}
+
+	// Draw the texture to the screen buffer
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); CHECK_GL_ERROR();
+}
+
 bool OpenGLGraphicsManager::loadGFXMode() {
 	// Use all available space for overlay
 	_videoMode.overlayWidth = _videoMode.hardwareWidth;
@@ -1243,6 +1305,8 @@ bool OpenGLGraphicsManager::loadGFXMode() {
 
 	// Initialize OpenGL settings
 	initGL();
+
+	initShaders();
 
 	loadTextures();
 
@@ -1304,6 +1368,98 @@ void OpenGLGraphicsManager::adjustMousePosition(int16 &x, int16 &y) {
 		x = x * _videoMode.screenWidth / _displayWidth;
 	if (_displayHeight != _videoMode.screenHeight)
 		y = y * _videoMode.screenHeight / _displayHeight;
+}
+
+void OpenGLGraphicsManager::initShaders() {
+	if (_shadersInited)
+		return;
+	_shadersInited = true;
+	const char * versionStr = (const char *)glGetString(GL_VERSION);
+	Common::String version;
+	int majorVersion, minorVersion;
+	Common::StringTokenizer st(versionStr);
+	// Version number is 3rd token in OpenGL ES
+	// and 1st token in OpenGL.
+#ifdef USE_GLES
+	st.nextToken();
+	st.nextToken();
+#endif
+	version = st.nextToken();
+	sscanf(version.c_str(), "%d.%d", &majorVersion, &minorVersion);
+	_enableShaders = majorVersion >= 2;
+
+	if (!_enableShaders)
+		return;
+
+	// Compile and link shaders
+	Common::File f;
+	int size;
+	char * buffer;
+
+	// TODO: Use some format to parse different shader sources from
+	if (!f.exists("vertex.glsl") || !f.exists("fragment.glsl")) {
+		_enableShaders = false;
+		return;
+	}
+
+	f.open("vertex.glsl");
+	size = f.size();
+	buffer = new char[size];
+	f.read(buffer, size);
+	_vertexShader = compileShader(buffer, size, GL_VERTEX_SHADER);
+	delete[] buffer;
+	f.close();
+
+	f.open("fragment.glsl");
+	size = f.size();
+	buffer = new char[size];
+	f.read(buffer, size);
+	_fragmentShader = compileShader(buffer, size, GL_FRAGMENT_SHADER);
+	delete[] buffer;
+	f.close();
+
+	_program = linkShaders(_vertexShader, _fragmentShader);
+	// TODO: Pass more uniforms to shaders to more easily enable pixel-level scaling
+	_textureLoc = glGetUniformLocation(_program, "texture");
+}
+
+GLuint OpenGLGraphicsManager::compileShader(const char * src, int size, GLenum type) {
+	GLuint shader = glCreateShader(type);
+	glShaderSource(shader, 1, &src, &size);
+	glCompileShader(shader);
+
+	int status;
+	glGetShaderiv(shader, GL_COMPILE_STATUS, &status);
+	if (!status) {
+		char * buffer;
+		int length;
+		glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &length);
+		buffer = new char[length];
+		glGetShaderInfoLog(shader, length, NULL, buffer);
+		if (type == GL_VERTEX_SHADER)
+			error("Vertex shader compilation failed:\n%s", buffer);
+		else
+			error("Fragment shader compilation failed:\n%s", buffer);
+	}
+	return shader;
+}
+
+GLuint OpenGLGraphicsManager::linkShaders(GLuint vertex, GLuint fragment) {
+	GLuint program = glCreateProgram();
+	glAttachShader(program, vertex);
+	glAttachShader(program, fragment);
+	glLinkProgram(program);
+	int status;
+	glGetProgramiv(program, GL_LINK_STATUS, &status);
+	if (!status) {
+		char * buffer;
+		int length;
+		glGetProgramiv(program, GL_INFO_LOG_LENGTH, &length);
+		buffer = new char[length];
+		glGetProgramInfoLog(program, length, NULL, buffer);
+		error("Shader program link failed:\n%s", buffer);
+	}
+	return program;
 }
 
 bool OpenGLGraphicsManager::saveScreenshot(const char *filename) {
