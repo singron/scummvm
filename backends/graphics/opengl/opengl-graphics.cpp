@@ -1248,8 +1248,10 @@ void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y
 	// Select this OpenGL texture
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, texture->getName()); CHECK_GL_ERROR();
-	if (_enableShaders)
+	if (_enableShaders) {
 		glUniform1i(_textureLoc, 0);
+		glUniform2f(_textureDimensionsLoc, texture->getWidth(), texture->getHeight());
+	}
 
 
 	// Calculate the texture rect that will be drawn
@@ -1421,6 +1423,7 @@ void OpenGLGraphicsManager::initShaders() {
 	_program = linkShaders(_vertexShader, _fragmentShader);
 	// TODO: Pass more uniforms to shaders to more easily enable pixel-level scaling
 	_textureLoc = glGetUniformLocation(_program, "texture");
+	_textureDimensionsLoc = glGetUniformLocation(_program, "textureDimensions");
 }
 
 GLuint OpenGLGraphicsManager::compileShader(const char * src, int size, GLenum type) {

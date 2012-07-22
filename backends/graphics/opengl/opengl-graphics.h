@@ -349,7 +349,7 @@ private:
 	bool _shadersInited;
 	GLuint _vertexShader, _fragmentShader;
 	GLuint _program;
-	GLuint _textureLoc;
+	GLuint _textureLoc, _textureDimensionsLoc;
 
 	/**
 	 * Check OpenGL version and compile shaders if supported.
