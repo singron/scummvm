@@ -350,6 +350,27 @@ bool XMLParser::parse() {
 
 				_char = _stream->readByte();
 				activeHeader = true;
+			} else if (_char == '!') {
+				// we already did skipComments() above, this might be CDATA
+				char chr[7];
+				_stream->read(chr, 7);
+				if (memcmp(chr, "[CDATA[", 7) != 0)
+					parserError("Malformed comment syntax.");
+				char lastChar = 0;
+				while ((_char = _stream->readByte()) != 0) {
+					if (_char == ']' && lastChar == ']')
+						break;
+					else if (lastChar == ']')
+						_activeKey.top()->contents += lastChar;
+					if (_char != ']')
+						_activeKey.top()->contents += _char;
+					lastChar = _char;
+				}
+				parseActiveKey(false);
+				_char = _stream->readByte();
+				_char = _stream->readByte();
+				_state = kParserNeedKey;
+				break;
 			} else if (_char == '/') {
 				_char = _stream->readByte();
 				activeClosure = true;
@@ -482,7 +503,15 @@ bool XMLParser::skipComments() {
 			return false;
 		}
 
-		if (_stream->readByte() != '-' || _stream->readByte() != '-')
+		_char = _stream->readByte();
+		if (_char == '[') {
+			// CDATA
+			_stream->seek(-2, SEEK_CUR);
+			_char = '<';
+			return false;
+		}
+
+		if (_char != '-' || _stream->readByte() != '-')
 			return parserError("Malformed comment syntax.");
 
 		_char = _stream->readByte();

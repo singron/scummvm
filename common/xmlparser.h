@@ -136,6 +136,7 @@ public:
 	/** Struct representing a parsed node */
 	struct ParserNode {
 		String name;
+		String contents;
 		StringMap values;
 		bool ignore;
 		bool header;
