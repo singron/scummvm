@@ -31,11 +31,55 @@
 #include "common/mutex.h"
 #include "common/textconsole.h"
 #include "common/translation.h"
+#include "common/xmlparser.h"
 #ifdef USE_OSD
 #include "common/tokenizer.h"
 #endif
 #include "graphics/font.h"
 #include "graphics/fontman.h"
+
+class ShaderParser : public Common::XMLParser {
+public:
+	ShaderParser() : _isGlsl(false), _filterIsNearest(true) { }
+
+	bool _isGlsl;
+	bool _filterIsNearest;
+
+	Common::String _vertexShader;
+	Common::String _fragmentShader;
+
+protected:
+	CUSTOM_XML_PARSER(ShaderParser) {
+		XML_KEY(shader)
+			XML_PROP(language, false)
+			XML_KEY(vertex)
+			KEY_END()
+			XML_KEY(fragment)
+				XML_PROP(filter, false)
+			KEY_END()
+		KEY_END()
+	} PARSER_END()
+
+	bool parserCallback_shader(ParserNode *node) {
+		if (node->values.contains("language") && node->values["language"] == "GLSL")
+			_isGlsl = true;
+
+		return true;
+	}
+	bool parserCallback_vertex(ParserNode *node) {
+		_vertexShader = node->contents;
+
+		return true;
+	}
+	bool parserCallback_fragment(ParserNode *node) {
+		if (node->values.contains("filter") && node->values["filter"] == "linear")
+			_filterIsNearest = false;
+
+		_fragmentShader = node->contents;
+
+		return true;
+	}
+};
 
 OpenGLGraphicsManager::OpenGLGraphicsManager()
 	:
@@ -1023,10 +1067,6 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 	// Clear the screen buffer
 	glClear(GL_COLOR_BUFFER_BIT); CHECK_GL_ERROR();
 
-	// FIXME: Use different program for gamescreen and overlay
-	if (_enableShaders)
-		glUseProgram(_program);
-
 	if (_screenNeedsRedraw || !_screenDirtyRect.isEmpty())
 		// Refresh texture if dirty
 		refreshGameScreen();
@@ -1038,8 +1078,13 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 	// Adjust game screen shake position
 	glTranslatef(0, _shakePos * scaleFactor, 0); CHECK_GL_ERROR();
 
+	if (_enableShaders)
+		glUseProgram(_currentShader->program);
 	// Draw the game screen
-	drawTexture(_gameTexture, _displayX, _displayY, _displayWidth, _displayHeight);
+	drawTexture(_gameTexture, _displayX, _displayY, _displayWidth, _displayHeight, _currentShader);
+
+	if (_enableShaders)
+		glUseProgram(_defaultShader->program);
 
 	glPopMatrix();
 
@@ -1049,7 +1094,7 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 			refreshOverlay();
 
 		// Draw the overlay
-		drawTexture(_overlayTexture, 0, 0, _videoMode.overlayWidth, _videoMode.overlayHeight);
+		drawTexture(_overlayTexture, 0, 0, _videoMode.overlayWidth, _videoMode.overlayHeight, _defaultShader);
 	}
 
 	if (_cursorVisible) {
@@ -1062,16 +1107,13 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 		// Adjust mouse shake position, unless the overlay is visible
 		glTranslatef(0, _overlayVisible ? 0 : _shakePos * scaleFactor, 0); CHECK_GL_ERROR();
 
-			drawTexture(_cursorTexture, _cursorState.x - _cursorState.vHotX,
-			                            _cursorState.y - _cursorState.vHotY, _cursorState.vW, _cursorState.vH);
-
 		// Draw the cursor
 		if (_overlayVisible)
 			drawTexture(_cursorTexture, _cursorState.x - _cursorState.rHotX,
-			                            _cursorState.y - _cursorState.rHotY, _cursorState.rW, _cursorState.rH);
+			                            _cursorState.y - _cursorState.rHotY, _cursorState.rW, _cursorState.rH, _defaultShader);
 		else
 			drawTexture(_cursorTexture, _cursorState.x - _cursorState.vHotX,
-			                            _cursorState.y - _cursorState.vHotY, _cursorState.vW, _cursorState.vH);
+			                            _cursorState.y - _cursorState.vHotY, _cursorState.vW, _cursorState.vH, _defaultShader);
 
 		glPopMatrix();
 	}
@@ -1098,7 +1140,7 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 		glColor4f(1.0f, 1.0f, 1.0f, _osdAlpha / 100.0f); CHECK_GL_ERROR();
 
 		// Draw the osd texture
-		drawTexture(_osdTexture, 0, 0, _videoMode.hardwareWidth, _videoMode.hardwareHeight);
+		drawTexture(_osdTexture, 0, 0, _videoMode.hardwareWidth, _videoMode.hardwareHeight, _defaultShader);
 
 		// Reset color
 		glColor4f(1.0f, 1.0f, 1.0f, 1.0f); CHECK_GL_ERROR();
@@ -1244,13 +1286,15 @@ void OpenGLGraphicsManager::loadTextures() {
 #endif
 }
 
-void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h) {
+void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h, const ShaderInfo *info) {
 	// Select this OpenGL texture
 	glActiveTexture(GL_TEXTURE0);
 	glBindTexture(GL_TEXTURE_2D, texture->getName()); CHECK_GL_ERROR();
 	if (_enableShaders) {
-		glUniform1i(_textureLoc, 0);
-		glUniform2f(_textureDimensionsLoc, texture->getWidth(), texture->getHeight());
+		glUniform1i(info->textureLoc, 0);
+		glUniform2f(info->inputSizeLoc, texture->getWidth(), texture->getHeight());
+		glUniform2f(info->outputSizeLoc, w, h);
+		glUniform2f(info->textureSizeLoc, texture->getTextureWidth(), texture->getTextureHeight());
 	}
 
 
@@ -1265,36 +1309,14 @@ void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y
 	};
 	glTexCoordPointer(2, GL_FLOAT, 0, texcoords); CHECK_GL_ERROR();
 
-	if (_enableShaders) {
-		// Transform [0 .. displayWidth] to [-1 .. 1]
-		float fx = (float)x / _videoMode.hardwareWidth;
-		float fw = (float)w / _videoMode.hardwareWidth;
-		float fy = (float)y / _videoMode.hardwareHeight;
-		float fh = (float)h / _videoMode.hardwareHeight;
-		fx *= 2;
-		fy *= -2;
-		fw *= 2;
-		fh *= -2;
-		fx -= 1;
-		fy += 1;
-		// Use OpenGL coordinates for vertices
-		const GLfloat vertices[] = {
-			fx,      fy,
-			fx + fw,  fy,
-			fx,      fy + fh,
-			fx + fw,  fy + fh,
-		};
-		glVertexPointer(2, GL_FLOAT, 0, vertices); CHECK_GL_ERROR();
-	} else {
-		// Calculate the screen rect where the texture will be drawn
-		const GLshort vertices[] = {
-			x,      y,
-			x + w,  y,
-			x,      y + h,
-			x + w,  y + h,
-		};
-		glVertexPointer(2, GL_SHORT, 0, vertices); CHECK_GL_ERROR();
-	}
+	// Calculate the screen rect where the texture will be drawn
+	const GLshort vertices[] = {
+		x,      y,
+		x + w,  y,
+		x,      y + h,
+		x + w,  y + h,
+	};
+	glVertexPointer(2, GL_SHORT, 0, vertices); CHECK_GL_ERROR();
 
 	// Draw the texture to the screen buffer
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); CHECK_GL_ERROR();
@@ -1308,9 +1330,9 @@ bool OpenGLGraphicsManager::loadGFXMode() {
 	// Initialize OpenGL settings
 	initGL();
 
-	initShaders();
-
 	loadTextures();
+
+	initShaders();
 
 	refreshCursorScale();
 
@@ -1372,6 +1394,39 @@ void OpenGLGraphicsManager::adjustMousePosition(int16 &x, int16 &y) {
 		y = y * _videoMode.screenHeight / _displayHeight;
 }
 
+bool OpenGLGraphicsManager::parseShader(const Common::String &filename, ShaderInfo &info) {
+	// FIXME
+	ShaderParser shaderParser;
+	if (!shaderParser.loadFile(filename)) {
+		warning("Could not open file:%s", filename.c_str());
+		return false;
+	}
+
+	warning("Shader parsing");
+	if (!shaderParser.parse()) {
+		warning("failed to parse shader:%s", filename.c_str());
+		return false;
+	}
+	if (!shaderParser._isGlsl) {
+		warning("shader is not glsl:%s", filename.c_str());
+		return false;
+	}
+
+	info.filter = (shaderParser._filterIsNearest ? GL_NEAREST : GL_LINEAR);
+	// Compile and link shaders
+
+	info.vertex = compileShader(shaderParser._vertexShader, GL_VERTEX_SHADER);
+	info.fragment = compileShader(shaderParser._fragmentShader, GL_FRAGMENT_SHADER);
+
+	info.program = linkShaders(info.vertex, info.fragment);
+
+	info.textureLoc = glGetUniformLocation(info.program, "rubyTexture");
+	info.inputSizeLoc = glGetUniformLocation(info.program, "rubyInputSize");
+	info.outputSizeLoc = glGetUniformLocation(info.program, "rubyOutputSize");
+	info.textureSizeLoc = glGetUniformLocation(info.program, "rubyTextureSize");
+	return true;
+}
+
 void OpenGLGraphicsManager::initShaders() {
 	if (_shadersInited)
 		return;
@@ -1393,42 +1448,34 @@ void OpenGLGraphicsManager::initShaders() {
 	if (!_enableShaders)
 		return;
 
-	// Compile and link shaders
-	Common::File f;
-	int size;
-	char * buffer;
+	ShaderInfo info;
+	Common::ArchiveMemberList files;
+	SearchMan.listMatchingMembers(files, "*.shader");
 
-	// TODO: Use some format to parse different shader sources from
-	if (!f.exists("vertex.glsl") || !f.exists("fragment.glsl")) {
-		_enableShaders = false;
-		return;
+	for (Common::ArchiveMemberList::iterator i = files.begin(); i != files.end(); ++i) {
+		info.name = (*i)->getName();
+		if (parseShader(info.name, info)) {
+			warning("Successfully compiled %s", info.name.c_str());
+			_shaders.push_back(info);
+		} else {
+			warning("%s is not a shader file", info.name.c_str());
+		}
 	}
 
-	f.open("vertex.glsl");
-	size = f.size();
-	buffer = new char[size];
-	f.read(buffer, size);
-	_vertexShader = compileShader(buffer, size, GL_VERTEX_SHADER);
-	delete[] buffer;
-	f.close();
-
-	f.open("fragment.glsl");
-	size = f.size();
-	buffer = new char[size];
-	f.read(buffer, size);
-	_fragmentShader = compileShader(buffer, size, GL_FRAGMENT_SHADER);
-	delete[] buffer;
-	f.close();
-
-	_program = linkShaders(_vertexShader, _fragmentShader);
-	// TODO: Pass more uniforms to shaders to more easily enable pixel-level scaling
-	_textureLoc = glGetUniformLocation(_program, "texture");
-	_textureDimensionsLoc = glGetUniformLocation(_program, "textureDimensions");
+	if (_shaders.empty()) {
+		warning("Did not find any valid *.shader files");
+		_enableShaders = false;
+	} else {
+		// FIXME: Get correct default shader
+		_currentShader = _defaultShader = &_shaders.front();
+	}
 }
 
-GLuint OpenGLGraphicsManager::compileShader(const char * src, int size, GLenum type) {
+GLuint OpenGLGraphicsManager::compileShader(const Common::String &src, GLenum type) {
+	int size = src.size();
+	const char * source = src.c_str();
 	GLuint shader = glCreateShader(type);
-	glShaderSource(shader, 1, &src, &size);
+	glShaderSource(shader, 1, &source, &size);
 	glCompileShader(shader);
 
 	int status;

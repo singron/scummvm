@@ -78,6 +78,8 @@ public:
 
 	virtual int16 getHeight();
 	virtual int16 getWidth();
+private:
+	void initGraphicsModes();
 protected:
 	// PaletteManager API
 	virtual void setPalette(const byte *colors, uint start, uint num);
@@ -118,11 +120,6 @@ protected:
 	 * Creates and refreshs OpenGL textures.
 	 */
 	virtual void loadTextures();
-
-	/**
-	 * Draws the texture to the screen buffer.
-	 */
-	void drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h);
 
 
 	//
@@ -345,20 +342,57 @@ protected:
 	// Shaders
 	//
 private:
+
 	bool _enableShaders; ///< Set based on OpenGL version
 	bool _shadersInited;
-	GLuint _vertexShader, _fragmentShader;
-	GLuint _program;
-	GLuint _textureLoc, _textureDimensionsLoc;
+
+	struct ShaderInfo {
+		// GL ids for shaders
+		GLuint vertex, fragment;
+		// GL id for program
+		GLuint program;
+		// Texture filter
+		GLint filter;
+		// GL ids for uniforms
+		GLuint textureLoc, textureSizeLoc, inputSizeLoc, outputSizeLoc;
+		Common::String name;
+	};
+
+	Common::Array<ShaderInfo> _shaders;
+	ShaderInfo *_currentShader, *_defaultShader;
+
+	static bool parseShader(const Common::String &filename, ShaderInfo &info);
 
 	/**
 	 * Check OpenGL version and compile shaders if supported.
 	 */
 	void initShaders();
 
-	GLuint compileShader(const char * src, int size, GLenum type);
+	/** 
+	 * Compiles shader.
+	 *
+	 * @param src    The source code.
+	 * @param type   Either GL_VERTEX_SHADER or GL_FRAGMENT_SHADER
+	 *
+	 * @return       The id to pass to GL functions.
+	 */
+	static GLuint compileShader(const Common::String &src, GLenum type);
 
-	GLuint linkShaders(GLuint vertex, GLuint fragment);
+	/**
+	 * Links two shaders into a shader program.
+	 *
+	 * @param vertex   The vertex shader.
+	 * @param fragment The fragment shader.
+	 *
+	 * @return         The id of the program to pass to GL functions.
+	 */
+	static GLuint linkShaders(GLuint vertex, GLuint fragment);
+
+	/**
+	 * Draws the texture to the screen buffer.
+	 */
+	void drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h, const ShaderInfo *info);
+
 
 	//
 	// Misc

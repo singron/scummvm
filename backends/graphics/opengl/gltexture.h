@@ -110,6 +110,16 @@ public:
 	GLfloat getDrawHeight() const { return (GLfloat)_realHeight / _textureHeight; }
 
 	/**
+	 * Get the texture width including padding.
+	 */
+	GLuint getTextureWidth() const { return _textureWidth; }
+
+	/**
+	 * Get the texture height including padding.
+	 */
+	GLuint getTextureHeight() const { return _textureHeight; }
+
+	/**
 	 * Get the bytes per pixel.
 	 */
 	uint getBytesPerPixel() const { return _bytesPerPixel; }
