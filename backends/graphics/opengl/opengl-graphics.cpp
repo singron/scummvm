@@ -176,23 +176,67 @@ bool OpenGLGraphicsManager::getFeatureState(OSystem::Feature f) {
 // Screen format and modes
 //
 
+#if 0
 static const OSystem::GraphicsMode s_supportedGraphicsModes[] = {
 	{"gl1", _s("OpenGL Normal"), OpenGL::GFX_NORMAL},
 	{"gl2", _s("OpenGL Conserve"), OpenGL::GFX_CONSERVE},
 	{"gl4", _s("OpenGL Original"), OpenGL::GFX_ORIGINAL},
 	{0, 0, 0}
 };
+#endif
+
+static Common::Array<OSystem::GraphicsMode> *s_supportedGraphicsModes;
+
+static int s_defaultMode = 0;
+
+void static initGraphicsModes () {
+	s_supportedGraphicsModes = new Common::Array<OSystem::GraphicsMode>;
+	OSystem::GraphicsMode gm;
+	Common::ArchiveMemberList files;
+	SearchMan.listMatchingMembers(files, "*.shader");
+	int index = 0;
+
+	// No gl calls can be made since the OpenGL context has not been created yet.
+	// Parse each xml file to check for valid file formats, but compilation will
+	// have to happen later.
+	for (Common::ArchiveMemberList::iterator i = files.begin(); i != files.end(); ++i) {
+		ShaderParser shaderParser;
+		shaderParser.loadFile((*i)->getName());
+		gm.description = gm.name = strdup((*i)->getName().c_str());
+		if (!shaderParser.parse()) {
+			warning("failed to parse shader:%s", gm.name);
+			continue;
+		}
+		if (!shaderParser._isGlsl) {
+			warning("shader is not glsl:%s", gm.name);
+			continue;
+		}
+		gm.id = index;
+		s_supportedGraphicsModes->push_back(gm);
+		if (strcmp(gm.name, "default.shader") == 0)
+			s_defaultMode = index;
+		index++;
+	}
+	gm.name = 0;
+	gm.description = 0;
+	gm.id = 0;
+	s_supportedGraphicsModes->push_back(gm);
+}
 
 const OSystem::GraphicsMode *OpenGLGraphicsManager::supportedGraphicsModes() {
-	return s_supportedGraphicsModes;
+	if (!s_supportedGraphicsModes)
+		initGraphicsModes();
+	return &s_supportedGraphicsModes->front();
 }
 
 const OSystem::GraphicsMode *OpenGLGraphicsManager::getSupportedGraphicsModes() const {
-	return s_supportedGraphicsModes;
+	if (!s_supportedGraphicsModes)
+		initGraphicsModes();
+	return &s_supportedGraphicsModes->front();
 }
 
 int OpenGLGraphicsManager::getDefaultGraphicsMode() const {
-	return OpenGL::GFX_NORMAL;
+	return s_defaultMode;
 }
 
 bool OpenGLGraphicsManager::setGraphicsMode(int mode) {
@@ -203,12 +247,7 @@ bool OpenGLGraphicsManager::setGraphicsMode(int mode) {
 	if (_oldVideoMode.setup && _oldVideoMode.mode == mode)
 		return true;
 
-	switch (mode) {
-	case OpenGL::GFX_NORMAL:
-	case OpenGL::GFX_CONSERVE:
-	case OpenGL::GFX_ORIGINAL:
-		break;
-	default:
+	if ((uint)mode >= s_supportedGraphicsModes->size() - 1) {
 		warning("Unknown gfx mode %d", mode);
 		return false;
 	}
@@ -1428,8 +1467,11 @@ bool OpenGLGraphicsManager::parseShader(const Common::String &filename, ShaderIn
 }
 
 void OpenGLGraphicsManager::initShaders() {
-	if (_shadersInited)
+	if (_shadersInited) {
+		_currentShader = &_shaders[_videoMode.mode];
+		_gameTexture->setFilter(_currentShader->filter);
 		return;
+	}
 	_shadersInited = true;
 	const char * versionStr = (const char *)glGetString(GL_VERSION);
 	Common::String version;
@@ -1449,11 +1491,11 @@ void OpenGLGraphicsManager::initShaders() {
 		return;
 
 	ShaderInfo info;
-	Common::ArchiveMemberList files;
-	SearchMan.listMatchingMembers(files, "*.shader");
 
-	for (Common::ArchiveMemberList::iterator i = files.begin(); i != files.end(); ++i) {
-		info.name = (*i)->getName();
+	_defaultShader = NULL;
+	for (uint i = 0; i < s_supportedGraphicsModes->size() - 1; ++i) {
+		OSystem::GraphicsMode &gm = (*s_supportedGraphicsModes)[i];
+		info.name = Common::String(gm.name);
 		if (parseShader(info.name, info)) {
 			warning("Successfully compiled %s", info.name.c_str());
 			_shaders.push_back(info);
@@ -1466,8 +1508,9 @@ void OpenGLGraphicsManager::initShaders() {
 		warning("Did not find any valid *.shader files");
 		_enableShaders = false;
 	} else {
-		// FIXME: Get correct default shader
-		_currentShader = _defaultShader = &_shaders.front();
+		_defaultShader = &_shaders[s_defaultMode];
+		_currentShader = &_shaders[_videoMode.mode];
+		_gameTexture->setFilter(_currentShader->filter);
 	}
 }
 

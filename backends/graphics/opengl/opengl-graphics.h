@@ -78,8 +78,6 @@ public:
 
 	virtual int16 getHeight();
 	virtual int16 getWidth();
-private:
-	void initGraphicsModes();
 protected:
 	// PaletteManager API
 	virtual void setPalette(const byte *colors, uint start, uint num);
