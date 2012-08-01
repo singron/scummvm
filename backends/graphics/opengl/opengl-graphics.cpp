@@ -187,7 +187,7 @@ static const OSystem::GraphicsMode s_supportedGraphicsModes[] = {
 
 static Common::Array<OSystem::GraphicsMode> *s_supportedGraphicsModes;
 
-void static initGraphicsModes () {
+static void initGraphicsModes () {
 	s_supportedGraphicsModes = new Common::Array<OSystem::GraphicsMode>;
 	OSystem::GraphicsMode gm;
 	Common::ArchiveMemberList files;
