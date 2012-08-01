@@ -553,6 +553,25 @@ bool OpenGLSdlGraphicsManager::notifyEvent(const Common::Event &event) {
 					return true;
 				}
 			}
+			const bool isNormalNumber = (SDLK_1 <= sdlKey && sdlKey <= SDLK_3);
+			const bool isKeypadNumber = (SDLK_KP1 <= sdlKey && sdlKey <= SDLK_KP3);
+
+			// Ctrl-Alt-<number key> will change the scale mode
+			if (isNormalNumber || isKeypadNumber) {
+				if (sdlKey - (isNormalNumber ? SDLK_1 : SDLK_KP1) <= 3) {
+#ifdef USE_OSD
+					int lastMode = getScaleMode();
+#endif
+					beginGFXTransaction();
+						setScaleMode(sdlKey - (isNormalNumber ? SDLK_1 : SDLK_KP1));
+					endGFXTransaction();
+#ifdef USE_OSD
+					if (lastMode != _videoMode.mode)
+						displayScaleModeChangedMsg();
+#endif
+					internUpdateScreen();
+				}
+			}
 
 			// Ctrl-Alt-<9,0> will change the GFX mode
 			if (sdlKey == SDLK_9 || sdlKey == SDLK_0) {
