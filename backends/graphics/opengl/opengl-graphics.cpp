@@ -264,6 +264,11 @@ int OpenGLGraphicsManager::getGraphicsMode() const {
 	return _videoMode.mode;
 }
 
+int OpenGLGraphicsManager::getMaxGraphicsMode() const {
+	assert(_transactionMode == kTransactionNone);
+	return _shaders.size() - 1;
+}
+
 void OpenGLGraphicsManager::resetGraphicsScale() {
 	setScale(1);
 }

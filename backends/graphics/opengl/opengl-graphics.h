@@ -65,6 +65,7 @@ public:
 	virtual int getDefaultGraphicsMode() const;
 	virtual bool setGraphicsMode(int mode);
 	virtual int getGraphicsMode() const;
+	virtual int getMaxGraphicsMode() const;
 	virtual void resetGraphicsScale();
 #ifdef USE_RGB_COLOR
 	virtual Graphics::PixelFormat getScreenFormat() const;

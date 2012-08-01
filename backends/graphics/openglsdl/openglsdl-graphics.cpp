@@ -554,28 +554,32 @@ bool OpenGLSdlGraphicsManager::notifyEvent(const Common::Event &event) {
 				}
 			}
 
-			const bool isNormalNumber = (SDLK_1 <= sdlKey && sdlKey <= SDLK_3);
-			const bool isKeypadNumber = (SDLK_KP1 <= sdlKey && sdlKey <= SDLK_KP3);
+			// Ctrl-Alt-<9,0> will change the GFX mode
+			if (sdlKey == SDLK_9 || sdlKey == SDLK_0) {
+#ifdef USE_OSD
+				int lastMode = _videoMode.mode;
+#endif
+				int mode = _videoMode.mode + (sdlKey == SDLK_9 ? -1 : 1);
+				int maxMode = getMaxGraphicsMode();
 
-			// Ctrl-Alt-<number key> will change the GFX mode
-			if (isNormalNumber || isKeypadNumber) {
-				if (sdlKey - (isNormalNumber ? SDLK_1 : SDLK_KP1) <= 3) {
+				// Wrap around
+				if (mode < 0)
+					mode = maxMode;
+				if (mode > maxMode)
+					mode = 0;
+
+				// We need to query the scale and set it up, because
+				// setGraphicsMode sets the default scale to 2
+				int oldScale = getScale();
+				beginGFXTransaction();
+					setGraphicsMode(mode);
+					setScale(oldScale);
+				endGFXTransaction();
 #ifdef USE_OSD
-					int lastMode = _videoMode.mode;
+				if (lastMode != _videoMode.mode)
+					displayModeChangedMsg();
 #endif
-					// We need to query the scale and set it up, because
-					// setGraphicsMode sets the default scale to 2
-					int oldScale = getScale();
-					beginGFXTransaction();
-						setGraphicsMode(sdlKey - (isNormalNumber ? SDLK_1 : SDLK_KP1));
-						setScale(oldScale);
-					endGFXTransaction();
-#ifdef USE_OSD
-					if (lastMode != _videoMode.mode)
-						displayModeChangedMsg();
-#endif
-					internUpdateScreen();
-				}
+				internUpdateScreen();
 			}
 		}
 
