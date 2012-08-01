@@ -126,8 +126,8 @@ void GLTexture::allocBuffer(GLuint w, GLuint h) {
 	// Set the texture parameters
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, _filter); CHECK_GL_ERROR();
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, _filter); CHECK_GL_ERROR();
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE); CHECK_GL_ERROR();
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE); CHECK_GL_ERROR();
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER); CHECK_GL_ERROR();
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER); CHECK_GL_ERROR();
 
 	// Allocate room for the texture
 	glTexImage2D(GL_TEXTURE_2D, 0, _internalFormat,
