@@ -66,6 +66,15 @@ public:
 	virtual bool setGraphicsMode(int mode);
 	virtual int getGraphicsMode() const;
 	virtual int getMaxGraphicsMode() const;
+	/**
+	 * Change the scale mode.
+	 *
+	 * GFX_NORMAL   scales to window size.
+	 * GFX_CONSERVE scales as large as possible while maintaining aspect ratio.
+	 * GFX_ORIGINAL keeps original size.
+	 */
+	virtual bool setScaleMode(int scaleMode);
+	virtual int getScaleMode() const;
 	virtual void resetGraphicsScale();
 #ifdef USE_RGB_COLOR
 	virtual Graphics::PixelFormat getScreenFormat() const;
@@ -160,6 +169,7 @@ protected:
 #endif
 	};
 	VideoState _videoMode, _oldVideoMode;
+	int _scaleMode;
 
 	/**
 	 * Sets the OpenGL texture format for the given pixel format. If format is not support will raise an error.
@@ -265,6 +275,11 @@ protected:
 	 * Displays a mode change message in OSD
 	 */
 	void displayModeChangedMsg();
+
+	/**
+	 * Displays a mode change message in OSD
+	 */
+	void displayScaleModeChangedMsg();
 
 	/**
 	 * Displays a scale change message in OSD

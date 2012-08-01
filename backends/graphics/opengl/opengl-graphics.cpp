@@ -102,7 +102,8 @@ OpenGLGraphicsManager::OpenGLGraphicsManager()
 	memset(&_videoMode, 0, sizeof(_videoMode));
 	memset(&_transactionDetails, 0, sizeof(_transactionDetails));
 
-	_videoMode.mode = OpenGL::GFX_NORMAL;
+	_scaleMode = OpenGL::GFX_NORMAL;
+	_videoMode.mode = 0;
 	_videoMode.scaleFactor = 2;
 	_videoMode.fullscreen = ConfMan.getBool("fullscreen");
 	_videoMode.antialiasing = false;
@@ -176,12 +177,11 @@ bool OpenGLGraphicsManager::getFeatureState(OSystem::Feature f) {
 // Screen format and modes
 //
 
-#if 0
-static const OSystem::GraphicsMode s_supportedGraphicsModes[] = {
-	{"gl1", _s("OpenGL Normal"), OpenGL::GFX_NORMAL},
-	{"gl2", _s("OpenGL Conserve"), OpenGL::GFX_CONSERVE},
-	{"gl4", _s("OpenGL Original"), OpenGL::GFX_ORIGINAL},
-	{0, 0, 0}
+#ifdef USE_OSD
+static const char *s_scaleModeNames[] = {
+	_s("OpenGL Normal"),
+	_s("OpenGL Conserve"),
+	_s("OpenGL Original")
 };
 #endif
 
@@ -267,6 +267,24 @@ int OpenGLGraphicsManager::getGraphicsMode() const {
 int OpenGLGraphicsManager::getMaxGraphicsMode() const {
 	assert(_transactionMode == kTransactionNone);
 	return _shaders.size() - 1;
+}
+
+bool OpenGLGraphicsManager::setScaleMode(int scaleMode) {
+	assert(_transactionMode == kTransactionActive);
+
+	if (scaleMode > 2 || scaleMode < 0) {
+		warning("Unknown scale mode %d", scaleMode);
+		return false;
+	}
+
+	_scaleMode = scaleMode;
+	_transactionDetails.needRefresh = true;
+
+	return true;
+}
+
+int OpenGLGraphicsManager::getScaleMode() const {
+	return _scaleMode;
 }
 
 void OpenGLGraphicsManager::resetGraphicsScale() {
@@ -651,7 +669,7 @@ void OpenGLGraphicsManager::warpMouse(int x, int y) {
 	if (x == currentX && y == currentY)
 		return;
 
-	if (_videoMode.mode == OpenGL::GFX_NORMAL) {
+	if (_scaleMode == OpenGL::GFX_NORMAL) {
 		if (_videoMode.hardwareWidth != _videoMode.overlayWidth)
 			scaledX = scaledX * _videoMode.hardwareWidth / _videoMode.overlayWidth;
 		if (_videoMode.hardwareHeight != _videoMode.overlayHeight)
@@ -765,6 +783,16 @@ void OpenGLGraphicsManager::displayModeChangedMsg() {
 		displayMessageOnOSD(osdMessage.c_str());
 	}
 }
+
+void OpenGLGraphicsManager::displayScaleModeChangedMsg() {
+	Common::String osdMessage = Common::String::format(
+		"%s: %s",
+		"Current scale mode",
+		s_scaleModeNames[_scaleMode]
+		);
+	displayMessageOnOSD(osdMessage.c_str());
+}
+
 void OpenGLGraphicsManager::displayScaleChangedMsg() {
 	const int scaleFactor = getScale();
 	Common::String osdMessage = Common::String::format(
@@ -992,7 +1020,7 @@ void OpenGLGraphicsManager::refreshCursorScale() {
 }
 
 void OpenGLGraphicsManager::calculateDisplaySize(int &width, int &height) {
-	if (_videoMode.mode == OpenGL::GFX_ORIGINAL) {
+	if (_scaleMode == OpenGL::GFX_ORIGINAL) {
 		width = _videoMode.screenWidth;
 		height = _videoMode.screenHeight;
 	} else {
@@ -1420,7 +1448,7 @@ uint OpenGLGraphicsManager::getAspectRatio() const {
 	        && ((_videoMode.screenWidth == 320 && _videoMode.screenHeight == 200)
 	            || (_videoMode.screenWidth == 640 && _videoMode.screenHeight == 400)))
 		return 13333;
-	else if (_videoMode.mode == OpenGL::GFX_NORMAL)
+	else if (_scaleMode == OpenGL::GFX_NORMAL)
 		return _videoMode.hardwareWidth * 10000 / _videoMode.hardwareHeight;
 	else
 		return _videoMode.screenWidth * 10000 / _videoMode.screenHeight;
