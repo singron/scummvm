@@ -187,18 +187,20 @@ static const OSystem::GraphicsMode s_supportedGraphicsModes[] = {
 
 static Common::Array<OSystem::GraphicsMode> *s_supportedGraphicsModes;
 
-static int s_defaultMode = 0;
-
 void static initGraphicsModes () {
 	s_supportedGraphicsModes = new Common::Array<OSystem::GraphicsMode>;
 	OSystem::GraphicsMode gm;
 	Common::ArchiveMemberList files;
 	SearchMan.listMatchingMembers(files, "*.shader");
-	int index = 0;
+	int index = 1;
 
 	// No gl calls can be made since the OpenGL context has not been created yet.
 	// Parse each xml file to check for valid file formats, but compilation will
 	// have to happen later.
+	gm.name = "default";
+	gm.id = 0;
+	gm.description = "Default";
+	s_supportedGraphicsModes->push_back(gm);
 	for (Common::ArchiveMemberList::iterator i = files.begin(); i != files.end(); ++i) {
 		ShaderParser shaderParser;
 		shaderParser.loadFile((*i)->getName());
@@ -213,8 +215,6 @@ void static initGraphicsModes () {
 		}
 		gm.id = index;
 		s_supportedGraphicsModes->push_back(gm);
-		if (strcmp(gm.name, "default.shader") == 0)
-			s_defaultMode = index;
 		index++;
 	}
 	gm.name = 0;
@@ -236,7 +236,8 @@ const OSystem::GraphicsMode *OpenGLGraphicsManager::getSupportedGraphicsModes() 
 }
 
 int OpenGLGraphicsManager::getDefaultGraphicsMode() const {
-	return s_defaultMode;
+	// First one is default
+	return 0;
 }
 
 bool OpenGLGraphicsManager::setGraphicsMode(int mode) {
@@ -1466,6 +1467,22 @@ bool OpenGLGraphicsManager::parseShader(const Common::String &filename, ShaderIn
 	return true;
 }
 
+const char *s_defaultVertex = 
+"#version 110\n "
+"uniform vec2 rubyTextureSize; "
+"void main() { "
+"  gl_Position = gl_ModelViewProjectionMatrix * gl_Vertex; "
+"  gl_TexCoord[0] = gl_MultiTexCoord0; "
+"} ";
+
+const char *s_defaultFragment =
+"#version 110\n "
+"uniform sampler2D rubyTexture; "
+"uniform vec2 rubyTextureSize; "
+"void main() { "
+"  gl_FragColor = texture2DProj(rubyTexture, gl_TexCoord[0]); "
+"} ";
+
 void OpenGLGraphicsManager::initShaders() {
 	if (_shadersInited) {
 		_currentShader = &_shaders[_videoMode.mode];
@@ -1492,8 +1509,20 @@ void OpenGLGraphicsManager::initShaders() {
 
 	ShaderInfo info;
 
-	_defaultShader = NULL;
-	for (uint i = 0; i < s_supportedGraphicsModes->size() - 1; ++i) {
+	// Initialize built-in shader
+	info.vertex = compileShader(s_defaultVertex, GL_VERTEX_SHADER);
+	info.fragment = compileShader(s_defaultFragment, GL_FRAGMENT_SHADER);
+	info.program = linkShaders(info.vertex, info.fragment);
+	info.name = "default";
+	info.filter = GL_NEAREST;
+	info.textureLoc = glGetUniformLocation(info.program, "rubyTexture");
+	info.inputSizeLoc = glGetUniformLocation(info.program, "rubyInputSize");
+	info.outputSizeLoc = glGetUniformLocation(info.program, "rubyOutputSize");
+	info.textureSizeLoc = glGetUniformLocation(info.program, "rubyTextureSize");
+
+	_shaders.push_back(info);
+
+	for (uint i = 1; i < s_supportedGraphicsModes->size() - 1; ++i) {
 		OSystem::GraphicsMode &gm = (*s_supportedGraphicsModes)[i];
 		info.name = Common::String(gm.name);
 		if (parseShader(info.name, info)) {
@@ -1504,14 +1533,10 @@ void OpenGLGraphicsManager::initShaders() {
 		}
 	}
 
-	if (_shaders.empty()) {
-		warning("Did not find any valid *.shader files");
-		_enableShaders = false;
-	} else {
-		_defaultShader = &_shaders[s_defaultMode];
-		_currentShader = &_shaders[_videoMode.mode];
-		_gameTexture->setFilter(_currentShader->filter);
-	}
+	_defaultShader = &_shaders[0];
+	_currentShader = &_shaders[_videoMode.mode];
+	//_currentShader = &_shaders[0];
+	_gameTexture->setFilter(_currentShader->filter);
 }
 
 GLuint OpenGLGraphicsManager::compileShader(const Common::String &src, GLenum type) {
