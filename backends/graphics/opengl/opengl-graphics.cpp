@@ -31,55 +31,12 @@
 #include "common/mutex.h"
 #include "common/textconsole.h"
 #include "common/translation.h"
-#include "common/xmlparser.h"
+#include "common/advxmlparser.h"
 #ifdef USE_OSD
 #include "common/tokenizer.h"
 #endif
 #include "graphics/font.h"
 #include "graphics/fontman.h"
-
-class ShaderParser : public Common::XMLParser {
-public:
-	ShaderParser() : _isGlsl(false), _filterIsNearest(true) { }
-
-	bool _isGlsl;
-	bool _filterIsNearest;
-
-	Common::String _vertexShader;
-	Common::String _fragmentShader;
-
-protected:
-	CUSTOM_XML_PARSER(ShaderParser) {
-		XML_KEY(shader)
-			XML_PROP(language, false)
-			XML_KEY(vertex)
-			KEY_END()
-			XML_KEY(fragment)
-				XML_PROP(filter, false)
-			KEY_END()
-		KEY_END()
-	} PARSER_END()
-
-	bool parserCallback_shader(ParserNode *node) {
-		if (node->values.contains("language") && node->values["language"] == "GLSL")
-			_isGlsl = true;
-
-		return true;
-	}
-	bool parserCallback_vertex(ParserNode *node) {
-		_vertexShader = node->contents;
-
-		return true;
-	}
-	bool parserCallback_fragment(ParserNode *node) {
-		if (node->values.contains("filter") && node->values["filter"] == "linear")
-			_filterIsNearest = false;
-
-		_fragmentShader = node->contents;
-
-		return true;
-	}
-};
 
 OpenGLGraphicsManager::OpenGLGraphicsManager()
 	:
@@ -195,24 +152,12 @@ static void initGraphicsModes () {
 	int index = 1;
 
 	// No gl calls can be made since the OpenGL context has not been created yet.
-	// Parse each xml file to check for valid file formats, but compilation will
-	// have to happen later.
 	gm.name = "default";
 	gm.id = 0;
 	gm.description = "Default";
 	s_supportedGraphicsModes->push_back(gm);
 	for (Common::ArchiveMemberList::iterator i = files.begin(); i != files.end(); ++i) {
-		ShaderParser shaderParser;
-		shaderParser.loadFile((*i)->getName());
 		gm.description = gm.name = strdup((*i)->getName().c_str());
-		if (!shaderParser.parse()) {
-			warning("failed to parse shader:%s", gm.name);
-			continue;
-		}
-		if (!shaderParser._isGlsl) {
-			warning("shader is not glsl:%s", gm.name);
-			continue;
-		}
 		gm.id = index;
 		s_supportedGraphicsModes->push_back(gm);
 		index++;
@@ -1151,13 +1096,11 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 	// Adjust game screen shake position
 	glTranslatef(0, _shakePos * scaleFactor, 0); CHECK_GL_ERROR();
 
-	if (_enableShaders)
-		glUseProgram(_currentShader->program);
 	// Draw the game screen
-	drawTexture(_gameTexture, _displayX, _displayY, _displayWidth, _displayHeight, _currentShader);
-
 	if (_enableShaders)
-		glUseProgram(_defaultShader->program);
+		drawTexture(_gameTexture, _displayX, _displayY, _displayWidth, _displayHeight, _currentShader);
+	else
+		drawTexture(_gameTexture, _displayX, _displayY, _displayWidth, _displayHeight);
 
 	glPopMatrix();
 
@@ -1167,7 +1110,7 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 			refreshOverlay();
 
 		// Draw the overlay
-		drawTexture(_overlayTexture, 0, 0, _videoMode.overlayWidth, _videoMode.overlayHeight, _defaultShader);
+		drawTexture(_overlayTexture, 0, 0, _videoMode.overlayWidth, _videoMode.overlayHeight);
 	}
 
 	if (_cursorVisible) {
@@ -1183,10 +1126,10 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 		// Draw the cursor
 		if (_overlayVisible)
 			drawTexture(_cursorTexture, _cursorState.x - _cursorState.rHotX,
-			                            _cursorState.y - _cursorState.rHotY, _cursorState.rW, _cursorState.rH, _defaultShader);
+			                            _cursorState.y - _cursorState.rHotY, _cursorState.rW, _cursorState.rH);
 		else
 			drawTexture(_cursorTexture, _cursorState.x - _cursorState.vHotX,
-			                            _cursorState.y - _cursorState.vHotY, _cursorState.vW, _cursorState.vH, _defaultShader);
+			                            _cursorState.y - _cursorState.vHotY, _cursorState.vW, _cursorState.vH);
 
 		glPopMatrix();
 	}
@@ -1213,7 +1156,7 @@ void OpenGLGraphicsManager::internUpdateScreen() {
 		glColor4f(1.0f, 1.0f, 1.0f, _osdAlpha / 100.0f); CHECK_GL_ERROR();
 
 		// Draw the osd texture
-		drawTexture(_osdTexture, 0, 0, _videoMode.hardwareWidth, _videoMode.hardwareHeight, _defaultShader);
+		drawTexture(_osdTexture, 0, 0, _videoMode.hardwareWidth, _videoMode.hardwareHeight);
 
 		// Reset color
 		glColor4f(1.0f, 1.0f, 1.0f, 1.0f); CHECK_GL_ERROR();
@@ -1358,18 +1301,158 @@ void OpenGLGraphicsManager::loadTextures() {
 	_requireOSDUpdate = true;
 #endif
 }
-
+// This function performs multipass rendering using shaders.
+// TODO: check if extensions are available, test OpenGL ES, clean/split function,
+//       generate buffers on gfxmode init, use x and y (instead of implicit 0,0)
 void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h, const ShaderInfo *info) {
-	// Select this OpenGL texture
-	glActiveTexture(GL_TEXTURE0);
-	glBindTexture(GL_TEXTURE_2D, texture->getName()); CHECK_GL_ERROR();
-	if (_enableShaders) {
-		glUniform1i(info->textureLoc, 0);
-		glUniform2f(info->inputSizeLoc, texture->getWidth(), texture->getHeight());
-		glUniform2f(info->outputSizeLoc, w, h);
-		glUniform2f(info->textureSizeLoc, texture->getTextureWidth(), texture->getTextureHeight());
-	}
+	float outputw, outputh, inputw, inputh, texw, texh;
+	inputw = texture->getWidth();
+	inputh = texture->getHeight();
+	texw = texture->getTextureWidth();
+	texh = texture->getTextureHeight();
+	bool implicitPass = false;
+	GLuint currentTexture = texture->getName();
+	GLuint fbo, outputtex;
+	for (uint i = 0; i < info->passes.size(); ++i) {
+		bool lastPass = (i == info->passes.size() - 1);
 
+		const ShaderPass &p = info->passes[i];
+
+		switch (p.xScaleMethod) {
+			case ShaderPass::kFixed:
+				outputw = p.xScale;
+				break;
+			case ShaderPass::kInput:
+				outputw = inputw * p.xScale;
+				break;
+			case ShaderPass::kOutput:
+				outputw = w * p.xScale;
+				break;
+			case ShaderPass::kNotSet:
+				outputw = inputw;
+		}
+
+		if (lastPass) {
+			if (p.xScaleMethod == ShaderPass::kNotSet) {
+				outputw = w;
+			} else {
+				implicitPass = true;
+			}
+		}
+
+		switch (p.yScaleMethod) {
+			case ShaderPass::kFixed:
+				outputh = p.yScale;
+				break;
+			case ShaderPass::kInput:
+				outputh = inputh * p.yScale;
+				break;
+			case ShaderPass::kOutput:
+				outputh = h * p.yScale;
+				break;
+			case ShaderPass::kNotSet:
+				outputh = inputh;
+		}
+		// ChecShaderPass::k if last pass
+		if (lastPass) {
+			if (p.yScaleMethod == ShaderPass::kNotSet) {
+				outputh = h;
+			} else {
+				implicitPass = true;
+			}
+		}
+
+		if (!lastPass || implicitPass) {
+			glGenTextures(1, &outputtex);
+			glBindTexture(GL_TEXTURE_2D, outputtex);
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, p.filter); CHECK_GL_ERROR();
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, p.filter); CHECK_GL_ERROR();
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT); CHECK_GL_ERROR();
+			glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT); CHECK_GL_ERROR();
+			glTexImage2D(
+					GL_TEXTURE_2D, 0, GL_RGB,
+					outputw, outputh,
+					0, GL_RGB, GL_UNSIGNED_BYTE, NULL);
+
+			glGenFramebuffersEXT(1, &fbo);
+			glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, fbo);
+			glFramebufferTexture2DEXT(
+					GL_FRAMEBUFFER_EXT, GL_COLOR_ATTACHMENT0_EXT, 
+					GL_TEXTURE_2D, outputtex, 0);
+			GLenum status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
+			if (status != GL_FRAMEBUFFER_COMPLETE_EXT) {
+				error("Framebuffer creation failed with %x", status);
+			}
+			glPushMatrix();
+			glPushAttrib(GL_VIEWPORT_BIT|GL_ENABLE_BIT);
+			glLoadIdentity();
+			glClear(GL_COLOR_BUFFER_BIT);
+			glViewport(0,0,outputw, outputh);
+		}
+		glBindTexture(GL_TEXTURE_2D, currentTexture); CHECK_GL_ERROR();
+		glActiveTexture(GL_TEXTURE0);
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, p.filter); CHECK_GL_ERROR();
+		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, p.filter); CHECK_GL_ERROR();
+		glUseProgram(p.program);
+		// Select this OpenGL texture
+		glUniform1i(p.textureLoc, 0);
+		glUniform2f(p.inputSizeLoc, inputw, inputh);
+		glUniform2f(p.outputSizeLoc, outputw, outputh);
+		glUniform2f(p.textureSizeLoc, texw, texh);
+		const GLfloat vertices[] = {
+			0, 0,
+			outputw, 0,
+			0, outputh,
+			outputw, outputh
+		};
+		const GLfloat texCoords[] = {
+			0, 0,
+			inputw/texw, 0,
+			0, inputh/texh,
+			inputw/texw, inputh/texh,
+		};
+		glTexCoordPointer(2, GL_FLOAT, 0, texCoords); CHECK_GL_ERROR();
+		glVertexPointer(2, GL_FLOAT, 0, vertices); CHECK_GL_ERROR();
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); CHECK_GL_ERROR();
+		glUseProgram(0);
+		inputw = outputw;
+		inputh = outputh;
+		texw = outputw;
+		texh = outputh;
+		if (i)
+			glDeleteTextures(1, &currentTexture);
+		if (!lastPass || implicitPass) {
+			glBindFramebufferEXT(GL_FRAMEBUFFER_EXT, 0);
+			glDeleteFramebuffersEXT(1, &fbo);
+			glPopMatrix();
+			glPopAttrib();
+		}
+		currentTexture = outputtex;
+	}
+	if (implicitPass) {
+		const GLshort vertices[] = {
+			0, 0,
+			w, 0,
+			0, h,
+			w, h
+		};
+		const GLfloat texCoords[] = {
+			0, 0,
+			inputw/texw, 0,
+			0, inputh/texh,
+			inputw/texw, inputh/texh,
+		};
+		glBindTexture(GL_TEXTURE_2D, currentTexture);
+		glTexCoordPointer(2, GL_FLOAT, 0, texCoords); CHECK_GL_ERROR();
+		glVertexPointer(2, GL_SHORT, 0, vertices); CHECK_GL_ERROR();
+		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); CHECK_GL_ERROR();
+		glDeleteTextures(1, &currentTexture);
+	}
+}
+
+void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h) {
+	// Select this OpenGL texture
+	glBindTexture(GL_TEXTURE_2D, texture->getName()); CHECK_GL_ERROR();
 
 	// Calculate the texture rect that will be drawn
 	const GLfloat texWidth = texture->getDrawWidth();
@@ -1469,34 +1552,180 @@ void OpenGLGraphicsManager::adjustMousePosition(int16 &x, int16 &y) {
 
 bool OpenGLGraphicsManager::parseShader(const Common::String &filename, ShaderInfo &info) {
 	// FIXME
-	ShaderParser shaderParser;
+	Common::AdvXMLParser shaderParser;
 	if (!shaderParser.loadFile(filename)) {
 		warning("Could not open file:%s", filename.c_str());
 		return false;
 	}
 
-	warning("Shader parsing");
-	if (!shaderParser.parse()) {
-		warning("failed to parse shader:%s", filename.c_str());
+	warning("Parsing shader: %s", filename.c_str());
+	Common::XMLTree *root, *shader = NULL, *t;
+
+	root = shaderParser.parse();
+
+	for (uint i = 0; i < root->children.size(); ++i) {
+		if (root->children[i]->type == Common::XMLTree::kKey &&
+				root->children[i]->text == "shader") {
+			shader = root->children[i];
+		}
+	}
+	if (!shader) {
+		warning("No shader element");
+		delete root;
 		return false;
 	}
-	if (!shaderParser._isGlsl) {
-		warning("shader is not glsl:%s", filename.c_str());
-		return false;
+
+	info.vertex = 0;
+
+	for (uint i = 0; i < shader->children.size(); ++i) {
+		if (shader->children[i]->type != Common::XMLTree::kKey)
+			continue;
+		t = shader->children[i];
+
+		if (t->text == "vertex") {
+			if (t->children[0]->type != Common::XMLTree::kText) {
+				warning("Unexpected key");
+				delete root;
+				return false;
+			}
+			const Common::String &src = t->children[0]->text;
+			info.vertex = compileShader(src, GL_VERTEX_SHADER);
+		} else if (t->text == "fragment") {
+			if (t->children[0]->type != Common::XMLTree::kText) {
+				warning("Unexpected key");
+				delete root;
+				return false;
+			}
+			ShaderPass p;
+			bool x = false, y = false;
+			p.xScaleMethod = ShaderPass::kNotSet;
+			p.yScaleMethod = ShaderPass::kNotSet;
+			p.filter = GL_NEAREST;
+			if (t->attrs.contains("filter")) {
+				const Common::String &value = t->attrs["filter"];
+				if (value == "nearest") {
+					p.filter = GL_NEAREST;
+				} else if (value == "linear") {
+					p.filter = GL_LINEAR;
+				} else {
+					warning("filter must be linear or nearest");
+					delete root;
+					return false;
+				}
+			}
+			if (t->attrs.contains("size")) {
+				x = y = true;
+				p.xScaleMethod = ShaderPass::kFixed;
+				p.yScaleMethod = ShaderPass::kFixed;
+				const Common::String &value = t->attrs["size"];
+				sscanf(value.c_str(), "%f", &p.xScale);
+				p.yScale = p.xScale;
+			}
+			if (t->attrs.contains("size_x")) {
+				if (x) {
+					warning("Conflicting attributes");
+					delete root;
+					return false;
+				}
+				x = true;
+				p.xScaleMethod = ShaderPass::kFixed;
+				const Common::String &value = t->attrs["size_x"];
+				sscanf(value.c_str(), "%f", &p.xScale);
+			}
+			if (t->attrs.contains("size_y")) {
+				if (y) {
+					warning("Conflicting attributes");
+					delete root;
+					return false;
+				}
+				y = true;
+				p.yScaleMethod = ShaderPass::kFixed;
+				const Common::String &value = t->attrs["size_y"];
+				sscanf(value.c_str(), "%f", &p.yScale);
+			}
+			if (t->attrs.contains("scale")) {
+				if (x || y) {
+					warning("Conflicting attributes");
+					delete root;
+					return false;
+				}
+				x = y = true;
+				p.xScaleMethod = ShaderPass::kInput;
+				p.yScaleMethod = ShaderPass::kInput;
+				const Common::String &value = t->attrs["scale"];
+				sscanf(value.c_str(), "%f", &p.xScale);
+				p.yScale = p.xScale;
+			}
+			if (t->attrs.contains("scale_x")) {
+				if (x) {
+					warning("Conflicting attributes");
+					delete root;
+					return false;
+				}
+				x = true;
+				p.xScaleMethod = ShaderPass::kInput;
+				const Common::String &value = t->attrs["scale_x"];
+				sscanf(value.c_str(), "%f", &p.xScale);
+			}
+			if (t->attrs.contains("scale_y")) {
+				if (y) {
+					warning("Conflicting attributes");
+					delete root;
+					return false;
+				}
+				y = true;
+				p.yScaleMethod = ShaderPass::kInput;
+				const Common::String &value = t->attrs["scale_y"];
+				sscanf(value.c_str(), "%f", &p.yScale);
+			}
+			if (t->attrs.contains("outscale")) {
+				if (x || y) {
+					warning("Conflicting attributes");
+					delete root;
+					return false;
+				}
+				x = y = true;
+				p.xScaleMethod = ShaderPass::kOutput;
+				p.yScaleMethod = ShaderPass::kOutput;
+				const Common::String &value = t->attrs["outscale"];
+				sscanf(value.c_str(), "%f", &p.xScale);
+				p.yScale = p.xScale;
+			}
+			if (t->attrs.contains("outscale_x")) {
+				if (x) {
+					warning("Conflicting attributes");
+					delete root;
+					return false;
+				}
+				x = true;
+				p.xScaleMethod = ShaderPass::kOutput;
+				const Common::String &value = t->attrs["outscale_x"];
+				sscanf(value.c_str(), "%f", &p.xScale);
+			}
+			if (t->attrs.contains("outscale_y")) {
+				if (y) {
+					warning("Conflicting attributes");
+					delete root;
+					return false;
+				}
+				y = true;
+				p.yScaleMethod = ShaderPass::kOutput;
+				const Common::String &value = t->attrs["outscale_y"];
+				sscanf(value.c_str(), "%f", &p.yScale);
+			}
+			const Common::String &src = t->children[0]->text;
+			p.fragment = compileShader(src, GL_FRAGMENT_SHADER);
+			p.program = linkShaders(info.vertex, p.fragment);
+			p.textureLoc = glGetUniformLocation(p.program, "rubyTexture");
+			p.inputSizeLoc = glGetUniformLocation(p.program, "rubyInputSize");
+			p.outputSizeLoc = glGetUniformLocation(p.program, "rubyOutputSize");
+			p.textureSizeLoc = glGetUniformLocation(p.program, "rubyTextureSize");
+			info.passes.push_back(p);
+		}
 	}
 
-	info.filter = (shaderParser._filterIsNearest ? GL_NEAREST : GL_LINEAR);
-	// Compile and link shaders
+	delete root;
 
-	info.vertex = compileShader(shaderParser._vertexShader, GL_VERTEX_SHADER);
-	info.fragment = compileShader(shaderParser._fragmentShader, GL_FRAGMENT_SHADER);
-
-	info.program = linkShaders(info.vertex, info.fragment);
-
-	info.textureLoc = glGetUniformLocation(info.program, "rubyTexture");
-	info.inputSizeLoc = glGetUniformLocation(info.program, "rubyInputSize");
-	info.outputSizeLoc = glGetUniformLocation(info.program, "rubyOutputSize");
-	info.textureSizeLoc = glGetUniformLocation(info.program, "rubyTextureSize");
 	return true;
 }
 
@@ -1519,7 +1748,6 @@ const char *s_defaultFragment =
 void OpenGLGraphicsManager::initShaders() {
 	if (_shadersInited) {
 		_currentShader = &_shaders[_videoMode.mode];
-		_gameTexture->setFilter(_currentShader->filter);
 		return;
 	}
 	_shadersInited = true;
@@ -1540,22 +1768,27 @@ void OpenGLGraphicsManager::initShaders() {
 	if (!_enableShaders)
 		return;
 
-	ShaderInfo info;
+	ShaderInfo dInfo;
+	ShaderPass p;
 
 	// Initialize built-in shader
-	info.vertex = compileShader(s_defaultVertex, GL_VERTEX_SHADER);
-	info.fragment = compileShader(s_defaultFragment, GL_FRAGMENT_SHADER);
-	info.program = linkShaders(info.vertex, info.fragment);
-	info.name = "default";
-	info.filter = GL_NEAREST;
-	info.textureLoc = glGetUniformLocation(info.program, "rubyTexture");
-	info.inputSizeLoc = glGetUniformLocation(info.program, "rubyInputSize");
-	info.outputSizeLoc = glGetUniformLocation(info.program, "rubyOutputSize");
-	info.textureSizeLoc = glGetUniformLocation(info.program, "rubyTextureSize");
+	dInfo.vertex = compileShader(s_defaultVertex, GL_VERTEX_SHADER);
+	p.fragment = compileShader(s_defaultFragment, GL_FRAGMENT_SHADER);
+	p.program = linkShaders(dInfo.vertex, p.fragment);
+	dInfo.name = "default";
+	p.filter = GL_NEAREST;
+	p.textureLoc = glGetUniformLocation(p.program, "rubyTexture");
+	p.inputSizeLoc = glGetUniformLocation(p.program, "rubyInputSize");
+	p.outputSizeLoc = glGetUniformLocation(p.program, "rubyOutputSize");
+	p.textureSizeLoc = glGetUniformLocation(p.program, "rubyTextureSize");
+	p.xScaleMethod = ShaderPass::kNotSet;
+	p.yScaleMethod = ShaderPass::kNotSet;
+	dInfo.passes.push_back(p);
 
-	_shaders.push_back(info);
+	_shaders.push_back(dInfo);
 
 	for (uint i = 1; i < s_supportedGraphicsModes->size() - 1; ++i) {
+		ShaderInfo info;
 		OSystem::GraphicsMode &gm = (*s_supportedGraphicsModes)[i];
 		info.name = Common::String(gm.name);
 		if (parseShader(info.name, info)) {
@@ -1569,7 +1802,6 @@ void OpenGLGraphicsManager::initShaders() {
 	_defaultShader = &_shaders[0];
 	_currentShader = &_shaders[_videoMode.mode];
 	//_currentShader = &_shaders[0];
-	_gameTexture->setFilter(_currentShader->filter);
 }
 
 GLuint OpenGLGraphicsManager::compileShader(const Common::String &src, GLenum type) {
@@ -1597,8 +1829,10 @@ GLuint OpenGLGraphicsManager::compileShader(const Common::String &src, GLenum ty
 
 GLuint OpenGLGraphicsManager::linkShaders(GLuint vertex, GLuint fragment) {
 	GLuint program = glCreateProgram();
-	glAttachShader(program, vertex);
-	glAttachShader(program, fragment);
+	if (vertex)
+		glAttachShader(program, vertex);
+	if (fragment)
+		glAttachShader(program, fragment);
 	glLinkProgram(program);
 	int status;
 	glGetProgramiv(program, GL_LINK_STATUS, &status);

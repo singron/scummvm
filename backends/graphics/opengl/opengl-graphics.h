@@ -360,15 +360,32 @@ private:
 	bool _enableShaders; ///< Set based on OpenGL version
 	bool _shadersInited;
 
-	struct ShaderInfo {
-		// GL ids for shaders
-		GLuint vertex, fragment;
+
+	struct ShaderPass {
+		// GL id for shaders
+		GLuint fragment;
 		// GL id for program
 		GLuint program;
 		// Texture filter
 		GLint filter;
+
+		enum {
+			kFixed,
+			kInput,
+			kOutput,
+			kNotSet
+		} xScaleMethod, yScaleMethod;
+
+		float xScale, yScale;
+
 		// GL ids for uniforms
 		GLuint textureLoc, textureSizeLoc, inputSizeLoc, outputSizeLoc;
+	};
+	struct ShaderInfo {
+		// GL ids for shaders
+		GLuint vertex;
+
+		Common::Array<ShaderPass> passes;
 		Common::String name;
 	};
 
@@ -406,6 +423,8 @@ private:
 	 * Draws the texture to the screen buffer.
 	 */
 	void drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h, const ShaderInfo *info);
+
+	void drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h);
 
 
 	//
