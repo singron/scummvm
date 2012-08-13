@@ -359,7 +359,7 @@ private:
 
 	bool _enableShaders; ///< Set based on OpenGL version
 	bool _shadersInited;
-
+	uint _frameCount;
 
 	struct ShaderPass {
 		// GL id for shaders
@@ -379,7 +379,7 @@ private:
 		float xScale, yScale;
 
 		// GL ids for uniforms
-		GLuint textureLoc, textureSizeLoc, inputSizeLoc, outputSizeLoc;
+		GLuint textureLoc, textureSizeLoc, inputSizeLoc, outputSizeLoc, frameCountLoc;
 	};
 	struct ShaderInfo {
 		// GL ids for shaders

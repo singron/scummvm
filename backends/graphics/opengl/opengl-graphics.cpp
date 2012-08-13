@@ -52,7 +52,7 @@ OpenGLGraphicsManager::OpenGLGraphicsManager()
 	_cursorVisible(false), _cursorKeyColor(0),
 	_cursorDontScale(false),
 	_formatBGR(false),
-	_enableShaders(false), _shadersInited(false),
+	_enableShaders(false), _shadersInited(false), _frameCount(0),
 	_displayX(0), _displayY(0), _displayWidth(0), _displayHeight(0) {
 
 	memset(&_oldVideoMode, 0, sizeof(_oldVideoMode));
@@ -1397,6 +1397,7 @@ void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y
 		glUseProgram(p.program);
 		// Select this OpenGL texture
 		glUniform1i(p.textureLoc, 0);
+		glUniform1i(p.frameCountLoc, _frameCount);
 		glUniform2f(p.inputSizeLoc, inputw, inputh);
 		glUniform2f(p.outputSizeLoc, outputw, outputh);
 		glUniform2f(p.textureSizeLoc, texw, texh);
@@ -1450,6 +1451,8 @@ void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y
 		glDeleteTextures(1, &currentTexture);
 	}
 	glEnable(GL_BLEND);
+
+	_frameCount++;
 }
 
 void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h) {
@@ -1731,6 +1734,7 @@ bool OpenGLGraphicsManager::parseShader(const Common::String &filename, ShaderIn
 		p.inputSizeLoc = glGetUniformLocation(p.program, "rubyInputSize");
 		p.outputSizeLoc = glGetUniformLocation(p.program, "rubyOutputSize");
 		p.textureSizeLoc = glGetUniformLocation(p.program, "rubyTextureSize");
+		p.frameCountLoc = glGetUniformLocation(p.program, "rubyFrameCount");
 	}
 
 	delete root;
@@ -1757,6 +1761,7 @@ const char *s_defaultFragment =
 void OpenGLGraphicsManager::initShaders() {
 	if (_shadersInited) {
 		_currentShader = &_shaders[_videoMode.mode];
+		_frameCount = 0;
 		return;
 	}
 	_shadersInited = true;
@@ -1810,6 +1815,7 @@ void OpenGLGraphicsManager::initShaders() {
 
 	_defaultShader = &_shaders[0];
 	_currentShader = &_shaders[_videoMode.mode];
+	_frameCount = 0;
 	//_currentShader = &_shaders[0];
 }
 
