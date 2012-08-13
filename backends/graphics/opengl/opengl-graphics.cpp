@@ -1389,6 +1389,7 @@ void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y
 			glClear(GL_COLOR_BUFFER_BIT);
 			glViewport(0,0,outputw, outputh);
 		}
+		glDisable(GL_BLEND);
 		glBindTexture(GL_TEXTURE_2D, currentTexture); CHECK_GL_ERROR();
 		glActiveTexture(GL_TEXTURE0);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, p.filter); CHECK_GL_ERROR();
@@ -1448,6 +1449,7 @@ void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); CHECK_GL_ERROR();
 		glDeleteTextures(1, &currentTexture);
 	}
+	glEnable(GL_BLEND);
 }
 
 void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h) {
@@ -1715,13 +1717,20 @@ bool OpenGLGraphicsManager::parseShader(const Common::String &filename, ShaderIn
 			}
 			const Common::String &src = t->children[0]->text;
 			p.fragment = compileShader(src, GL_FRAGMENT_SHADER);
-			p.program = linkShaders(info.vertex, p.fragment);
-			p.textureLoc = glGetUniformLocation(p.program, "rubyTexture");
-			p.inputSizeLoc = glGetUniformLocation(p.program, "rubyInputSize");
-			p.outputSizeLoc = glGetUniformLocation(p.program, "rubyOutputSize");
-			p.textureSizeLoc = glGetUniformLocation(p.program, "rubyTextureSize");
 			info.passes.push_back(p);
 		}
+
+	}
+
+	// The vertex shader may not have been compiled when the pass was parsed.
+	// Link the programs now.
+	for (uint j = 0; j < info.passes.size(); ++j) {
+		ShaderPass &p = info.passes[j];
+		p.program = linkShaders(info.vertex, p.fragment);
+		p.textureLoc = glGetUniformLocation(p.program, "rubyTexture");
+		p.inputSizeLoc = glGetUniformLocation(p.program, "rubyInputSize");
+		p.outputSizeLoc = glGetUniformLocation(p.program, "rubyOutputSize");
+		p.textureSizeLoc = glGetUniformLocation(p.program, "rubyTextureSize");
 	}
 
 	delete root;
