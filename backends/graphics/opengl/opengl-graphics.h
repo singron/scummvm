@@ -380,6 +380,9 @@ private:
 
 		// GL ids for uniforms
 		GLuint textureLoc, textureSizeLoc, inputSizeLoc, outputSizeLoc, frameCountLoc;
+
+		// GL ids for non-standard uniforms
+		GLuint origTextureLoc, origTextureSizeLoc, origInputSizeLoc;
 	};
 	struct ShaderInfo {
 		// GL ids for shaders

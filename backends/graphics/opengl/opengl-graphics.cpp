@@ -1305,13 +1305,15 @@ void OpenGLGraphicsManager::loadTextures() {
 // TODO: check if extensions are available, test OpenGL ES, clean/split function,
 //       generate buffers on gfxmode init, use x and y (instead of implicit 0,0)
 void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y, GLshort w, GLshort h, const ShaderInfo *info) {
-	float outputw, outputh, inputw, inputh, texw, texh;
-	inputw = texture->getWidth();
-	inputh = texture->getHeight();
-	texw = texture->getTextureWidth();
-	texh = texture->getTextureHeight();
+	float outputw, outputh, inputw, inputh, texw, texh,
+		  origInputw, origInputh, origTexw, origTexh;
+	origInputw = inputw = texture->getWidth();
+	origInputh = inputh = texture->getHeight();
+	origTexw = texw = texture->getTextureWidth();
+	origTexh = texh = texture->getTextureHeight();
 	bool implicitPass = false;
 	GLuint currentTexture = texture->getName();
+	GLuint origTexture = currentTexture;
 	GLuint fbo, outputtex;
 	for (uint i = 0; i < info->passes.size(); ++i) {
 		bool lastPass = (i == info->passes.size() - 1);
@@ -1390,17 +1392,30 @@ void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y
 			glViewport(0,0,outputw, outputh);
 		}
 		glDisable(GL_BLEND);
+
+		//Set up current Texture
+		glActiveTexture(GL_TEXTURE1); CHECK_GL_ERROR();
 		glBindTexture(GL_TEXTURE_2D, currentTexture); CHECK_GL_ERROR();
-		glActiveTexture(GL_TEXTURE0);
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, p.filter); CHECK_GL_ERROR();
 		glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, p.filter); CHECK_GL_ERROR();
+
+		// Set up orig Texture
+		glActiveTexture(GL_TEXTURE0); CHECK_GL_ERROR();
+		glBindTexture(GL_TEXTURE_2D, origTexture); CHECK_GL_ERROR();
+
 		glUseProgram(p.program);
-		// Select this OpenGL texture
-		glUniform1i(p.textureLoc, 0);
+
+		glUniform1i(p.textureLoc, 1);
 		glUniform1i(p.frameCountLoc, _frameCount);
 		glUniform2f(p.inputSizeLoc, inputw, inputh);
 		glUniform2f(p.outputSizeLoc, outputw, outputh);
 		glUniform2f(p.textureSizeLoc, texw, texh);
+
+		// Use non-standard uniforms
+		glUniform2f(p.origInputSizeLoc, origInputw, origInputh);
+		glUniform2f(p.origTextureSizeLoc, origTexw, origTexh);
+		glUniform1i(p.origTextureLoc, 0);
+
 		const GLfloat vertices[] = {
 			0, 0,
 			outputw, 0,
@@ -1415,8 +1430,11 @@ void OpenGLGraphicsManager::drawTexture(GLTexture *texture, GLshort x, GLshort y
 		};
 		glTexCoordPointer(2, GL_FLOAT, 0, texCoords); CHECK_GL_ERROR();
 		glVertexPointer(2, GL_FLOAT, 0, vertices); CHECK_GL_ERROR();
+
 		glDrawArrays(GL_TRIANGLE_STRIP, 0, 4); CHECK_GL_ERROR();
+
 		glUseProgram(0);
+
 		inputw = outputw;
 		inputh = outputh;
 		texw = outputw;
@@ -1735,6 +1753,11 @@ bool OpenGLGraphicsManager::parseShader(const Common::String &filename, ShaderIn
 		p.outputSizeLoc = glGetUniformLocation(p.program, "rubyOutputSize");
 		p.textureSizeLoc = glGetUniformLocation(p.program, "rubyTextureSize");
 		p.frameCountLoc = glGetUniformLocation(p.program, "rubyFrameCount");
+
+		// Non-standard but sometimes used
+		p.origTextureLoc = glGetUniformLocation(p.program, "rubyOrigTexture");
+		p.origTextureSizeLoc = glGetUniformLocation(p.program, "rubyOrigTextureSize");
+		p.origInputSizeLoc = glGetUniformLocation(p.program, "rubyOrigInputSize");
 	}
 
 	delete root;
@@ -1795,6 +1818,10 @@ void OpenGLGraphicsManager::initShaders() {
 	p.inputSizeLoc = glGetUniformLocation(p.program, "rubyInputSize");
 	p.outputSizeLoc = glGetUniformLocation(p.program, "rubyOutputSize");
 	p.textureSizeLoc = glGetUniformLocation(p.program, "rubyTextureSize");
+	p.origTextureSizeLoc = glGetUniformLocation(p.program, "rubyOrigTextureSize");
+	p.origTextureLoc = glGetUniformLocation(p.program, "rubyOrigTexture");
+	p.origInputSizeLoc = glGetUniformLocation(p.program, "rubyOrigInputSize");
+
 	p.xScaleMethod = ShaderPass::kNotSet;
 	p.yScaleMethod = ShaderPass::kNotSet;
 	dInfo.passes.push_back(p);
